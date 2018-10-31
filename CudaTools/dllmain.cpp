@@ -313,5 +313,120 @@ DllExport void FlattenImage(CudaImage* pCudaImage, int type)
 }
 
 
+DllExport void GetImageAverage(CudaImage* pCudaImage, uint16_t* grayImage, int width, int height, int* pAverage)
+{
+	uint64_t sum = pCudaImage->SumImage(grayImage, width, height);
+
+	uint64_t numElements = (uint64_t)(width*height);
+	*pAverage = (int)( sum / numElements );
+}
+
+
+DllExport void GetGrayImageAverage(CudaImage* pCudaImage, int* pAverage)
+{
+	// this function assumes that a gray image has already been loaded onto the gpu using SetFullGrayscaleImage() above
+
+	uint64_t sum = pCudaImage->SumLoadedGrayImage();
+
+	uint64_t numElements = (uint64_t)(pCudaImage->m_imageW * pCudaImage->m_imageH);
+	*pAverage = (int)(sum / numElements);
+}
+
 
 #pragma endregion CudaImage
+
+
+
+#pragma region CudaUtil
+
+
+
+DllExport void InitCudaUtil(CudaUtil** pp_CudaUtil)
+{
+	*pp_CudaUtil = new CudaUtil();	
+}
+
+DllExport void Shutdown_CudaUtil(CudaUtil* pCudaUtil)
+{
+	delete pCudaUtil;
+}
+
+
+
+
+//bool GetCudaDeviceCount(int &count);
+DllExport int GetCudaDeviceCount(CudaUtil* pCudaUtil)
+{
+	int count = 0;
+	if (pCudaUtil->GetCudaDeviceCount(count))
+	{
+		return count;
+	}
+	else
+		return 0;
+}
+
+
+//bool GetComputeCapability(int &major, int &minor);
+DllExport void GetCudaComputeCapability(CudaUtil* pCudaUtil, int* major, int* minor)
+{
+	int maj = 0, min = 0;
+	if (pCudaUtil->GetComputeCapability(maj, min))
+	{
+		*major = maj;
+		*minor = min;
+	}
+	else
+	{
+		*major = 0;
+		*minor = 0;
+	}
+}
+
+
+//bool GetDeviceName(std::string &name);
+DllExport void GetCudaDeviceName(CudaUtil* pCudaUtil, char* pName, int* pLen)
+{
+	std::string name;
+	if (pCudaUtil->GetDeviceName(name))
+	{
+		// copying the contents of the string to char array 
+		strcpy(pName, name.c_str());
+		*pLen = name.length();
+	}
+	else
+	{
+		*pLen = 0;
+	}
+}
+
+//bool GetDeviceMemory(size_t &totalMem, size_t &freeMem);
+DllExport void GetCudaDeviceMemory(CudaUtil* pCudaUtil, int64_t* pTotMem, int64_t* pFreeMem)
+{
+	size_t totmem = 0, freemem = 0;
+	if (pCudaUtil->GetDeviceMemory(totmem, freemem))
+	{
+		*pTotMem = (int64_t)totmem;
+		*pFreeMem = (int64_t)freemem;
+	}
+	else
+	{
+		*pTotMem = 0;
+		*pFreeMem = 0;
+	}
+}
+
+
+//std::string GetLastErrorMessage();
+DllExport void GetCudaLastErrorMessage(CudaUtil* pCudaUtil, char* pMessage, int* pLen)
+{	
+	std::string msg = pCudaUtil->GetLastErrorMessage();
+	
+	// copying the contents of the string to char array 
+	strcpy(pMessage, msg.c_str());
+	*pLen = msg.length();	
+}
+
+
+
+#pragma endregion CudaUtil

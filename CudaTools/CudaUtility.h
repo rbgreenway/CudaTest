@@ -106,34 +106,29 @@ struct GpuTimer
 };
 
 
-//
-//class CudaUtil
-//{
-//public:
-//	CudaUtil();
-//	~CudaUtil();
-//
-//	void Init();
-//	std::string GetCudaErrorMessage(CUresult cudaResult);
-//	static std::string GetCudaErrorDescription(CUresult result);
-//	bool GetCudaDeviceCount(int &count);
-//	bool GetComputeCapability(int &major, int &minor);
-//	bool GetDeviceName(std::string &name);
-//	bool GetDeviceMemory(size_t &totalMem, size_t &freeMem);
-//	bool GetContext(CUcontext **pCtx);
-//	bool IsCudaReady();
-//	std::string GetLastErrorMessage();
-//
-//
-//
-//private:
-//	CUresult m_result;
-//	CUcontext          m_cudaContext;
-//	CUdevice           m_cudaDevice;
-//	std::string m_errMsg;
-//	bool m_cudaDriverReady;
-//	int  m_deviceCount;
-//};
-//
+
+class CudaUtil
+{
+public:
+	CudaUtil();
+	~CudaUtil();
+
+	//std::string GetCudaErrorMessage(CUresult cudaResult);
+	//static std::string GetCudaErrorDescription(CUresult result);
+	bool GetCudaDeviceCount(int &count);
+	bool GetComputeCapability(int &major, int &minor);
+	bool GetDeviceName(std::string &name);
+	bool GetDeviceMemory(uint64_t &totalMem, uint64_t &freeMem);
+	std::string GetLastErrorMessage();
+
+
+
+private:
+	CUresult m_result;
+	CUdevice           m_cudaDevice;
+	std::string m_errMsg;
+	int  m_deviceCount;
+};
+
 
 #endif

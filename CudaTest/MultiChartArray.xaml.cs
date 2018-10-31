@@ -8,7 +8,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
-using CudaToolsNet;
+using CudaTools;
 using System.ComponentModel;
 using System.Windows.Threading;
 using System.Threading.Tasks.Dataflow;

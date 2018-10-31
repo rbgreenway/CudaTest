@@ -68,6 +68,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="ChartArray.cs" />
+    <Compile Include="CudaUtil.cs" />
     <Compile Include="ImageTool.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>

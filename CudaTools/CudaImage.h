@@ -9,6 +9,8 @@
 #include <cuda.h>
 #include <stdio.h>
 #include <string.h>
+#include <algorithm>
+
 
 #include "CudaUtility.h"
 
@@ -72,6 +74,11 @@ public:
 
 	void FlattenImage(int type);
 
+	uint64_t SumImage(uint16_t* grayImage, uint16_t width, uint16_t height);
+
+	uint64_t SumLoadedGrayImage();
+
+	void Test();
 
 
 

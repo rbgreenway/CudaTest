@@ -83,6 +83,9 @@
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </ApplicationDefinition>
+    <Compile Include="ChartArray.cs" />
+    <Compile Include="CudaUtil.cs" />
+    <Compile Include="ImageTool.cs" />
     <Compile Include="RangeSlider.xaml.cs">
       <DependentUpon>RangeSlider.xaml</DependentUpon>
     </Compile>
@@ -151,12 +154,6 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\CudaPlotNet\CudaToolsNet.csproj">
-      <Project>{b078f86b-ba81-443f-beba-7678d6bea803}</Project>
-      <Name>CudaToolsNet</Name>
-    </ProjectReference>
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Images\circle_arrow_1.png" />

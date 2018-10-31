@@ -3,13 +3,11 @@ using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using System.Security;
 using System.Windows;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
 
 
 
 
-namespace CudaToolsNet
+namespace CudaTools
 {
     public class ImageTool : IDisposable
     {
@@ -153,7 +151,7 @@ namespace CudaToolsNet
         [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl, EntryPoint = "SetRoiGrayscaleImage")]
         //uint16_t* SetRoiGrayscaleImage(CudaImage* pCudaImage, uint16_t* roiImage, uint16_t imageWidth, uint16_t imageHeight,
         //                               uint16_t roiWidth, uint16_t roiHeight, uint16_t roiX, uint16_t roiY)
-        static extern IntPtr ImageTool_SetRoiGrayscaleImage(IntPtr pImageTool, IntPtr roiImage, UInt16 imageWidth, UInt16 imageHeight, 
+        static extern IntPtr ImageTool_SetRoiGrayscaleImage(IntPtr pImageTool, IntPtr roiImage, UInt16 imageWidth, UInt16 imageHeight,
                                          UInt16 roiWidth, UInt16 roiHeight, UInt16 roiX, UInt16 roiY);
 
         public IntPtr PostRoiGrayscaleImage(UInt16[] roiImage, UInt16 width, UInt16 height, UInt16 roiWidth, UInt16 roiHeight, UInt16 roiX, UInt16 roiY)
@@ -478,6 +476,62 @@ namespace CudaToolsNet
         ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl, EntryPoint = "GetImageAverage")]
+        // void GetImageAverage(CudaImage* pCudaImage, uint16_t* grayImage, int width, int height, uint16_t* pAverage)
+        static extern void ImageTool_GetImageAverage(IntPtr pImageTool, IntPtr grayImage, UInt16 imageWidth, UInt16 imageHeight, IntPtr average);
+
+        public UInt16 GetImageAverage(UInt16[] grayImage, UInt16 width, UInt16 height)
+        {
+            // copy 16-bit grayscale image to GPU
+            GCHandle pinnedArray = GCHandle.Alloc(grayImage, GCHandleType.Pinned);
+            IntPtr grayImagePointer = pinnedArray.AddrOfPinnedObject();
+
+            int average = 0;
+            GCHandle pinnedAverage = GCHandle.Alloc(average, GCHandleType.Pinned);
+            IntPtr averagePointer = pinnedAverage.AddrOfPinnedObject();
+
+            ImageTool_GetImageAverage(imageTool, grayImagePointer, width, height, averagePointer);
+
+            average = Marshal.ReadInt32(averagePointer, 0);
+
+            pinnedArray.Free();
+            pinnedAverage.Free();
+
+            return (UInt16)average;
+        }
+
+
+        ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+        ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+        ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl, EntryPoint = "GetGrayImageAverage")]
+        // DllExport void GetGrayImageAverage(CudaImage* pCudaImage, int* pAverage)
+        static extern void ImageTool_GetGrayImageAverage(IntPtr pImageTool, IntPtr average);
+
+        public UInt16 GetGrayImageAverage()
+        {
+            int average = 0;
+            GCHandle pinnedAverage = GCHandle.Alloc(average, GCHandleType.Pinned);
+            IntPtr averagePointer = pinnedAverage.AddrOfPinnedObject();
+
+            ImageTool_GetGrayImageAverage(imageTool, averagePointer);
+
+            average = Marshal.ReadInt32(averagePointer, 0);
+
+            pinnedAverage.Free();
+
+            return (UInt16)average;
+        }
+
+
+        ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+        ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+        ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 
     }
+
 }

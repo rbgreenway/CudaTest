@@ -2,16 +2,25 @@
 
 #define LOG_CUDA
 
+
+#include <stdio.h>
+#include <cooperative_groups.h>
+
+namespace cg = cooperative_groups;
+
 // Constructor
 CudaImage::CudaImage()
 {
-
+	
 }
 
 CudaImage::~CudaImage()
 {
 
 }
+
+
+
 
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -433,6 +442,446 @@ __global__ void CopyRoiToFullImage_Cuda(uint16_t* full, uint16_t* roi, uint16_t 
 }
 
 
+
+
+template <unsigned int blockSize> __device__ void warpReduce(volatile uint64_t *sdata, unsigned int tid)
+{
+	if (blockSize >= 64) sdata[tid] += sdata[tid + 32];
+	if (blockSize >= 32) sdata[tid] += sdata[tid + 16];
+	if (blockSize >= 16) sdata[tid] += sdata[tid + 8];
+	if (blockSize >= 8)  sdata[tid] += sdata[tid + 4];
+	if (blockSize >= 4)  sdata[tid] += sdata[tid + 2];
+	if (blockSize >= 2)  sdata[tid] += sdata[tid + 1];
+}
+
+
+template <unsigned int blockSize> __global__ void reduce6(uint16_t *g_idata, uint64_t *g_odata, unsigned int n)
+{
+	extern __shared__ uint64_t sdata[blockSize];
+	unsigned int tid = threadIdx.x;
+	unsigned int i = blockIdx.x*(blockSize * 2) + tid;
+	unsigned int gridSize = blockSize * 2 * gridDim.x;
+	sdata[tid] = 0;
+
+	while (i < n)
+	{
+		sdata[tid] += g_idata[i] + g_idata[i + blockSize];  
+		i += gridSize;
+	}
+	__syncthreads();
+
+	if (blockSize >= 512)
+	{
+		if (tid < 256)
+		{
+			sdata[tid] += sdata[tid + 256];
+		}
+		__syncthreads();
+	}
+	if (blockSize >= 256)
+	{
+		if (tid < 128)
+		{
+			sdata[tid] += sdata[tid + 128];
+		}
+		__syncthreads();
+	}
+	if (blockSize >= 128)
+	{
+		if (tid < 64)
+		{
+			sdata[tid] += sdata[tid + 64];
+		}
+		__syncthreads();
+	}
+	if (tid < 32) warpReduce<blockSize>(sdata, tid);
+	if (tid == 0) g_odata[blockIdx.x] = sdata[0];
+}
+
+
+// Utility class used to avoid linker errors with extern
+// unsized shared memory arrays with templated type
+template<class T>
+struct SharedMemory
+{
+	__device__ inline operator T *()
+	{
+		extern __shared__ int __smem[];
+		return (T *)__smem;
+	}
+
+	__device__ inline operator const T *() const
+	{
+		extern __shared__ int __smem[];
+		return (T *)__smem;
+	}
+};
+
+// specialize for double to avoid unaligned memory
+// access compile errors
+template<>
+struct SharedMemory<double>
+{
+	__device__ inline operator double *()
+	{
+		extern __shared__ double __smem_d[];
+		return (double *)__smem_d;
+	}
+
+	__device__ inline operator const double *() const
+	{
+		extern __shared__ double __smem_d[];
+		return (double *)__smem_d;
+	}
+};
+
+
+/*
+This version adds multiple elements per thread sequentially.  This reduces the overall
+cost of the algorithm while keeping the work complexity O(n) and the step complexity O(log n).
+(Brent's Theorem optimization)
+
+Note, this kernel needs a minimum of 64*sizeof(T) bytes of shared memory.
+In other words if blockSize <= 32, allocate 64*sizeof(T) bytes.
+If blockSize > 32, allocate blockSize*sizeof(T) bytes.
+*/
+template <class T1, class T2, unsigned int blockSize, bool nIsPow2>
+__global__ void
+reduce6(T1 *g_idata, T2 *g_odata, unsigned int n)
+{
+	// Handle to thread block group
+	cg::thread_block cta = cg::this_thread_block();
+	T2 *sdata = SharedMemory<T2>();
+
+	// perform first level of reduction,
+	// reading from global memory, writing to shared memory
+	unsigned int tid = threadIdx.x;
+	unsigned int i = blockIdx.x*blockSize * 2 + threadIdx.x;
+	unsigned int gridSize = blockSize * 2 * gridDim.x;
+
+	T2 mySum = 0;
+
+	// we reduce multiple elements per thread.  The number is determined by the
+	// number of active thread blocks (via gridDim).  More blocks will result
+	// in a larger gridSize and therefore fewer elements per thread
+	while (i < n)
+	{
+		mySum += g_idata[i];
+
+		// ensure we don't read out of bounds -- this is optimized away for powerOf2 sized arrays
+		if (nIsPow2 || i + blockSize < n)
+			mySum += g_idata[i + blockSize];
+
+		i += gridSize;
+	}
+
+	// each thread puts its local sum into shared memory
+	sdata[tid] = mySum;
+	cg::sync(cta);
+
+
+	// do reduction in shared mem
+	if ((blockSize >= 512) && (tid < 256))
+	{
+		sdata[tid] = mySum = mySum + sdata[tid + 256];
+	}
+
+	cg::sync(cta);
+
+	if ((blockSize >= 256) && (tid < 128))
+	{
+		sdata[tid] = mySum = mySum + sdata[tid + 128];
+	}
+
+	cg::sync(cta);
+
+	if ((blockSize >= 128) && (tid <  64))
+	{
+		sdata[tid] = mySum = mySum + sdata[tid + 64];
+	}
+
+	cg::sync(cta);
+
+#if (__CUDA_ARCH__ >= 300 )
+	if (tid < 32)
+	{
+		cg::coalesced_group active = cg::coalesced_threads();
+
+		// Fetch final intermediate sum from 2nd warp
+		if (blockSize >= 64) mySum += sdata[tid + 32];
+		// Reduce final warp using shuffle
+		for (int offset = warpSize / 2; offset > 0; offset /= 2)
+		{
+			mySum += active.shfl_down(mySum, offset);
+		}
+	}
+#else
+	// fully unroll reduction within a single warp
+	if ((blockSize >= 64) && (tid < 32))
+	{
+		sdata[tid] = mySum = mySum + sdata[tid + 32];
+	}
+
+	cg::sync(cta);
+
+	if ((blockSize >= 32) && (tid < 16))
+	{
+		sdata[tid] = mySum = mySum + sdata[tid + 16];
+	}
+
+	cg::sync(cta);
+
+	if ((blockSize >= 16) && (tid <  8))
+	{
+		sdata[tid] = mySum = mySum + sdata[tid + 8];
+	}
+
+	cg::sync(cta);
+
+	if ((blockSize >= 8) && (tid <  4))
+	{
+		sdata[tid] = mySum = mySum + sdata[tid + 4];
+	}
+
+	cg::sync(cta);
+
+	if ((blockSize >= 4) && (tid <  2))
+	{
+		sdata[tid] = mySum = mySum + sdata[tid + 2];
+	}
+
+	cg::sync(cta);
+
+	if ((blockSize >= 2) && (tid <  1))
+	{
+		sdata[tid] = mySum = mySum + sdata[tid + 1];
+	}
+
+	cg::sync(cta);
+#endif
+
+	// write result for this block to global mem
+	if (tid == 0) g_odata[blockIdx.x] = mySum;
+}
+
+
+
+bool isPow2(unsigned int x)
+{
+	return ((x&(x - 1)) == 0);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Wrapper function for kernel launch
+////////////////////////////////////////////////////////////////////////////////
+template <class T1, class T2>  // T1 is input type, T2 is output type
+void
+reduce(int size, int threads, int blocks, T1 *d_idata, T2 *d_odata)
+{
+	dim3 dimBlock(threads, 1, 1);
+	dim3 dimGrid(blocks, 1, 1);
+
+	// when there is only one warp per block, we need to allocate two warps
+	// worth of shared memory so that we don't index shared memory out of bounds
+	int smemSize = (threads <= 32) ? 2 * threads * sizeof(T2) : threads * sizeof(T2);
+
+
+		if (isPow2(size))
+		{
+			switch (threads)
+			{
+			case 512:
+				reduce6<T1, T2, 512, true> << < dimGrid, dimBlock, smemSize >> >(d_idata, d_odata, size);
+				break;
+
+			case 256:
+				reduce6<T1, T2, 256, true> << < dimGrid, dimBlock, smemSize >> >(d_idata, d_odata, size);
+				break;
+
+			case 128:
+				reduce6<T1, T2, 128, true> << < dimGrid, dimBlock, smemSize >> >(d_idata, d_odata, size);
+				break;
+
+			case 64:
+				reduce6<T1, T2, 64, true> << < dimGrid, dimBlock, smemSize >> >(d_idata, d_odata, size);
+				break;
+
+			case 32:
+				reduce6<T1, T2, 32, true> << < dimGrid, dimBlock, smemSize >> >(d_idata, d_odata, size);
+				break;
+
+			case 16:
+				reduce6<T1, T2, 16, true> << < dimGrid, dimBlock, smemSize >> >(d_idata, d_odata, size);
+				break;
+
+			case  8:
+				reduce6<T1, T2, 8, true> << < dimGrid, dimBlock, smemSize >> >(d_idata, d_odata, size);
+				break;
+
+			case  4:
+				reduce6<T1, T2, 4, true> << < dimGrid, dimBlock, smemSize >> >(d_idata, d_odata, size);
+				break;
+
+			case  2:
+				reduce6<T1, T2, 2, true> << < dimGrid, dimBlock, smemSize >> >(d_idata, d_odata, size);
+				break;
+
+			case  1:
+				reduce6<T1, T2, 1, true> << < dimGrid, dimBlock, smemSize >> >(d_idata, d_odata, size);
+				break;
+			}
+		}
+		else
+		{
+			switch (threads)
+			{
+			case 512:
+				reduce6<T1, T2, 512, false> << < dimGrid, dimBlock, smemSize >> >(d_idata, d_odata, size);
+				break;
+
+			case 256:
+				reduce6<T1, T2, 256, false> << < dimGrid, dimBlock, smemSize >> >(d_idata, d_odata, size);
+				break;
+
+			case 128:
+				reduce6<T1, T2, 128, false> << < dimGrid, dimBlock, smemSize >> >(d_idata, d_odata, size);
+				break;
+
+			case 64:
+				reduce6<T1, T2, 64, false> << < dimGrid, dimBlock, smemSize >> >(d_idata, d_odata, size);
+				break;
+
+			case 32:
+				reduce6<T1, T2, 32, false> << < dimGrid, dimBlock, smemSize >> >(d_idata, d_odata, size);
+				break;
+
+			case 16:
+				reduce6<T1, T2, 16, false> << < dimGrid, dimBlock, smemSize >> >(d_idata, d_odata, size);
+				break;
+
+			case  8:
+				reduce6<T1, T2, 8, false> << < dimGrid, dimBlock, smemSize >> >(d_idata, d_odata, size);
+				break;
+
+			case  4:
+				reduce6<T1, T2, 4, false> << < dimGrid, dimBlock, smemSize >> >(d_idata, d_odata, size);
+				break;
+
+			case  2:
+				reduce6<T1, T2, 2, false> << < dimGrid, dimBlock, smemSize >> >(d_idata, d_odata, size);
+				break;
+
+			case  1:
+				reduce6<T1, T2, 1, false> << < dimGrid, dimBlock, smemSize >> >(d_idata, d_odata, size);
+				break;
+			}
+		}
+
+}
+
+
+
+uint64_t CudaImage::SumImage(uint16_t* grayImage, uint16_t width, uint16_t height)
+{
+	unsigned int elementCount = ((unsigned int)width)*((unsigned int)height);
+	unsigned int blockSize = 256;  // number of threads
+	unsigned int numBlocks = (elementCount + blockSize - 1) / blockSize;
+
+	// copy gray (input) image to gpu
+	uint16_t* d_grayImage;
+	cudaError_t res = cudaMalloc(&d_grayImage, elementCount * sizeof(uint16_t));
+	res = cudaMemcpy(d_grayImage, grayImage, elementCount * sizeof(uint16_t), cudaMemcpyHostToDevice);
+
+	// allocate for output data (of type uint64_t), and initialize to zero
+	uint64_t* d_output;
+	res = cudaMalloc(&d_output, numBlocks * sizeof(uint64_t));
+	cudaMemset(d_output, 0, numBlocks * sizeof(uint64_t));
+
+	reduce<uint16_t, uint64_t> (elementCount, blockSize, numBlocks, d_grayImage, d_output);
+
+	uint64_t *p_vals = (uint64_t*)malloc(numBlocks*sizeof(uint64_t));
+
+	res = cudaMemcpy(p_vals, d_output, numBlocks * sizeof(uint64_t), cudaMemcpyDeviceToHost);
+
+	uint64_t sum = 0;
+
+	for (int i = 0; i < numBlocks; i++)
+		sum += p_vals[i];
+
+
+	cudaFree(d_grayImage);
+	cudaFree(d_output);
+	free(p_vals);
+
+	return sum;
+}
+
+
+uint64_t CudaImage::SumLoadedGrayImage()
+{
+	if (mp_d_grayImage == 0) return 0;
+
+	unsigned int elementCount = ((unsigned int)m_imageW)*((unsigned int)m_imageH);
+	unsigned int blockSize = 512;  // number of threads
+	unsigned int numBlocks = (elementCount + blockSize - 1) / blockSize;
+
+	// allocate for output data (of type uint64_t), and initialize to zero
+	uint64_t* d_output;
+	cudaError_t res = cudaMalloc(&d_output, numBlocks * sizeof(uint64_t));
+	cudaMemset(d_output, 0, numBlocks * sizeof(uint64_t));
+
+	reduce<uint16_t, uint64_t>(elementCount, blockSize, numBlocks, mp_d_grayImage, d_output);
+
+	uint64_t *p_vals = (uint64_t*)malloc(numBlocks * sizeof(uint64_t));
+
+	res = cudaMemcpy(p_vals, d_output, numBlocks * sizeof(uint64_t), cudaMemcpyDeviceToHost);
+
+	uint64_t sum = 0;
+
+	for (int i = 0; i < numBlocks; i++)
+		sum += p_vals[i];
+
+	cudaFree(d_output);
+	free(p_vals);
+
+	return sum;
+}
+
+
+void CudaImage::Test()
+{
+	uint16_t w = 1024;
+	uint16_t h = 1024;
+
+	uint16_t* p_data = (uint16_t*)malloc(w*h * sizeof(uint16_t));
+
+	for (int r = 0; r < h; r++)
+	{
+		for (int c = 0; c < w; c++)
+		{
+			int index = r*w + c;
+
+			p_data[index] = 1;
+		}
+	}
+
+
+	GpuTimer t1;
+
+	t1.Start();
+	uint64_t sum = SumImage(p_data, w, h);
+	t1.Stop();
+	float t = t1.ElapsedMillis();
+
+	free(p_data);
+
+	float avg = (float)sum / (float)(w*h);
+
+	sum += 0;
+
+
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -716,61 +1165,64 @@ void CudaImage::Init()
 
 void CudaImage::Shutdown()
 {
-	if (mp_d_grayImage != 0) {
-		cudaError_t err = cudaFree(mp_d_grayImage);
-		mp_d_grayImage = 0;
-	}
-	if (mp_d_colorImage != 0) {
-		cudaFree(mp_d_colorImage);
-		mp_d_colorImage = 0;
-	}
-	if (mp_d_maskImage != 0) {
-		cudaFree(mp_d_maskImage);
-		mp_d_maskImage = 0;
-	}
-	if (mp_d_roiImage != 0) {
-		cudaFree(mp_d_roiImage);
-		mp_d_roiImage = 0;
-	}
-	if (mp_d_redMap != 0) {
-		cudaFree(mp_d_redMap);
-		mp_d_redMap = 0;
-	}
-	if (mp_d_greenMap != 0) {
-		cudaFree(mp_d_greenMap);
-		mp_d_greenMap = 0;
-	}
-	if (mp_d_blueMap != 0) {
-		cudaFree(mp_d_blueMap);
-		mp_d_blueMap = 0;
-	}
-	if (mp_d_histogram != 0) {
-		cudaFree(mp_d_histogram);
-		mp_d_histogram = 0;
-	}
-	if (mp_d_colorHistogramImage != 0) {
-		cudaFree(mp_d_colorHistogramImage);
-		mp_d_colorHistogramImage = 0;
-	}
-	if (mp_d_maskApertureSums != 0) {
-		cudaFree(mp_d_maskApertureSums);
-		mp_d_maskApertureSums = 0;
-	}
-	if (mp_d_FFC_Fluor_Gc != 0) {
-		cudaFree(mp_d_FFC_Fluor_Gc);
-		mp_d_FFC_Fluor_Gc = 0;
-	}
-	if (mp_d_FFC_Fluor_Dc != 0) {
-		cudaFree(mp_d_FFC_Fluor_Dc);
-		mp_d_FFC_Fluor_Dc = 0;
-	}
-	if (mp_d_FFC_Lumi_Gc != 0) {
-		cudaFree(mp_d_FFC_Lumi_Gc);
-		mp_d_FFC_Lumi_Gc = 0;
-	}
-	if (mp_d_FFC_Lumi_Dc != 0) {
-		cudaFree(mp_d_FFC_Lumi_Dc);
-		mp_d_FFC_Lumi_Dc = 0;
+	if (this != 0)
+	{
+		if (mp_d_grayImage != 0) {
+			cudaError_t err = cudaFree(mp_d_grayImage);
+			mp_d_grayImage = 0;
+		}
+		if (mp_d_colorImage != 0) {
+			cudaFree(mp_d_colorImage);
+			mp_d_colorImage = 0;
+		}
+		if (mp_d_maskImage != 0) {
+			cudaFree(mp_d_maskImage);
+			mp_d_maskImage = 0;
+		}
+		if (mp_d_roiImage != 0) {
+			cudaFree(mp_d_roiImage);
+			mp_d_roiImage = 0;
+		}
+		if (mp_d_redMap != 0) {
+			cudaFree(mp_d_redMap);
+			mp_d_redMap = 0;
+		}
+		if (mp_d_greenMap != 0) {
+			cudaFree(mp_d_greenMap);
+			mp_d_greenMap = 0;
+		}
+		if (mp_d_blueMap != 0) {
+			cudaFree(mp_d_blueMap);
+			mp_d_blueMap = 0;
+		}
+		if (mp_d_histogram != 0) {
+			cudaFree(mp_d_histogram);
+			mp_d_histogram = 0;
+		}
+		if (mp_d_colorHistogramImage != 0) {
+			cudaFree(mp_d_colorHistogramImage);
+			mp_d_colorHistogramImage = 0;
+		}
+		if (mp_d_maskApertureSums != 0) {
+			cudaFree(mp_d_maskApertureSums);
+			mp_d_maskApertureSums = 0;
+		}
+		if (mp_d_FFC_Fluor_Gc != 0) {
+			cudaFree(mp_d_FFC_Fluor_Gc);
+			mp_d_FFC_Fluor_Gc = 0;
+		}
+		if (mp_d_FFC_Fluor_Dc != 0) {
+			cudaFree(mp_d_FFC_Fluor_Dc);
+			mp_d_FFC_Fluor_Dc = 0;
+		}
+		if (mp_d_FFC_Lumi_Gc != 0) {
+			cudaFree(mp_d_FFC_Lumi_Gc);
+			mp_d_FFC_Lumi_Gc = 0;
+		}
+		if (mp_d_FFC_Lumi_Dc != 0) {
+			cudaFree(mp_d_FFC_Lumi_Dc);
+			mp_d_FFC_Lumi_Dc = 0;
+		}
 	}
 }
 
@@ -910,3 +1362,4 @@ void CudaImage::FlattenImage(int type)
 		break;
 	}
 }
+

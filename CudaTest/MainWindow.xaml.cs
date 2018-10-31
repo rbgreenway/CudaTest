@@ -34,8 +34,18 @@ namespace CudaTest
             m_vm = new MainWindow_ViewModel();
             DataContext = m_vm;
 
+            CudaTools.CudaUtil cudaUtil = new CudaTools.CudaUtil();
+            cudaUtil.Init();
 
-            CudaToolsNet.ImageTool imageTool = new CudaToolsNet.ImageTool();
+            int numCudaDevices = cudaUtil.GetCudaDeviceCount();
+            int major=0, minor=0;
+            cudaUtil.GetCudaDeviceComputeCapability(ref major, ref minor);
+            string name = cudaUtil.GetCudaDeviceName();
+
+            Int64 totalMem = 0, freeMem = 0;
+            cudaUtil.GetCudaDeviceMemory(ref totalMem, ref freeMem);
+
+            CudaTools.ImageTool imageTool = new CudaTools.ImageTool();
             imageTool.Init();
 
 
@@ -70,8 +80,32 @@ namespace CudaTest
             {                
                 double angle = ((double)i) / 80.0;                
                 m_dummyData[i] = (int)((100.0+(double)i) * Math.Sin(angle));
-            }    
+            }
+
+
+
+            int w = 1024;
+            int h = 1024;
+            UInt16 val = 654;
+
+            UInt16[] image = SynthesizeGrayImage(w, h, val);
+
+            imageTool.PostFullGrayscaleImage(image, (UInt16)w, (UInt16)h);
+
+
+            Stopwatch sw = new Stopwatch();
             
+            sw.Start();
+            //UInt16 avg = imageTool.GetImageAverage(image, (UInt16)w, (UInt16)h);
+            UInt16 avg = imageTool.GetGrayImageAverage();
+            sw.Stop();
+            long t = sw.ElapsedMilliseconds;
+            long t1 = sw.ElapsedTicks;
+            double usecs = ((double)t1 / (double)Stopwatch.Frequency) * 1000000.0;
+
+            MessageBox.Show("Average = " + avg.ToString() + "     Execution Time = " + usecs.ToString() + " usecs", 
+                "Information", MessageBoxButton.OK, MessageBoxImage.Information);
+
         }
 
 
@@ -224,6 +258,23 @@ namespace CudaTest
                 loopCount++;
             }
         }
+
+
+
+        private UInt16[] SynthesizeGrayImage(int width, int height, UInt16 val)
+        {
+            UInt16[] image = new UInt16[width * height];
+
+            for(int r = 0; r<height; r++)
+                for(int c = 0; c<width; c++)
+                {
+                    int index = (r * width) + c;
+                    image[index] = val;
+                }
+
+            return image;
+        }
+
     }
 
 

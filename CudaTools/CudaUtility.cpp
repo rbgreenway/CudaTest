@@ -1,181 +1,115 @@
 #include "cudautility.h"
-//
-//
-//CudaUtil::CudaUtil()
-//{
-//	m_cudaDriverReady = true;
-//	m_cudaContext = NULL;
-//	m_cudaDevice = -1;
-//
-//}
-//
-//
-//
-//
-//CudaUtil::~CudaUtil()
-//{
-//	if (m_cudaContext)
-//	{
-//		CUresult err = cuCtxDestroy(m_cudaContext);
-//		if (err != CUDA_SUCCESS)
-//			printf("WARNING: cuCtxDestroy failed (%d)\n", err);
-//		m_cudaContext = NULL;
-//	}
-//}
-//
-//
-//void CudaUtil::Init()
-//{
-//	m_result = cuInit(0);
-//	cudaFree(0); // call this to force Cuda to initialize (and thus getting rid of the delay during the first call to a Cuda function) 
-//
-//}
-//
-//
-//
-//bool CudaUtil::GetCudaDeviceCount(int &count)
-//{
-//	if (!m_cudaDriverReady)
-//	{
-//		return false;
-//	}
-//
-//	bool success = true;
-//
-//	m_result = cuDeviceGetCount(&count);
-//	if (m_result != CUDA_SUCCESS)
-//	{
-//		m_errMsg = GetCudaErrorMessage(m_result);
-//		success = false;
-//	}
-//
-//	return success;
-//}
-//
-//
-//bool CudaUtil::GetComputeCapability(int &major, int &minor)
-//{
-//	bool success = true;
-//
-//	if (!m_cudaDriverReady)
-//	{
-//		return false;
-//	}
-//
-//	int value;
-//	m_result = cuDeviceGetAttribute(&value, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, m_cudaDevice);
-//
-//	if (m_result == CUDA_SUCCESS)
-//	{
-//		major = value;
-//
-//		m_result = cuDeviceGetAttribute(&value, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR, m_cudaDevice);
-//
-//		if (m_result == CUDA_SUCCESS)
-//		{
-//			minor = value;
-//		}
-//		else
-//		{
-//			m_errMsg = GetCudaErrorMessage(m_result);
-//			success = false;
-//		}
-//	}
-//	else
-//	{
-//		m_errMsg = GetCudaErrorMessage(m_result);
-//		success = false;
-//	}
-//
-//	return success;
-//}
-//
-//bool CudaUtil::GetDeviceName(std::string &name)
-//{
-//	bool success = true;
-//
-//	if (!m_cudaDriverReady)
-//	{
-//		return false;
-//	}
-//
-//	char _name[100];
-//
-//	m_result = cuDeviceGetName(_name, 99, m_cudaDevice);
-//	if (m_result == CUDA_SUCCESS)
-//	{
-//		std::string str(_name);
-//		name = str;
-//	}
-//	else
-//	{
-//		name = "unknown";
-//		success = false;
-//	}
-//
-//	return success;
-//}
-//
-//bool CudaUtil::GetDeviceMemory(size_t &totalMem, size_t &freeMem)
-//{
-//	bool success = true;
-//
-//	if (!m_cudaDriverReady)
-//	{
-//		return false;
-//	}
-//
-//	m_result = cuMemGetInfo(&freeMem, &totalMem);
-//	if (m_result == CUDA_SUCCESS)
-//	{
-//	}
-//	else
-//	{
-//		freeMem = (size_t)0;
-//		totalMem = (size_t)0;
-//		success = false;
-//	}
-//
-//	return success;
-//}
-//
-//
-//
-//bool CudaUtil::GetContext(CUcontext **pCtx)
-//{
-//	bool success = true;
-//
-//	if (!m_cudaDriverReady)
-//	{
-//		m_errMsg = "Cuda Driver not ready";
-//		return false;
-//	}
-//
-//	*pCtx = &m_cudaContext;
-//
-//	return success;
-//}
-//
-//bool CudaUtil::IsCudaReady()
-//{
-//	return m_cudaDriverReady;
-//}
-//
-//std::string CudaUtil::GetLastErrorMessage()
-//{
-//	return m_errMsg;
-//}
-//
+
+
+CudaUtil::CudaUtil()
+{
+	m_cudaDevice = -1;
+}
+
+
+
+
+CudaUtil::~CudaUtil()
+{		
+}
+
+
+
+
+
+bool CudaUtil::GetCudaDeviceCount(int &count)
+{	
+	bool success = true;
+	count = 0;
+	int cnt = 0;
+	cudaError_t result = cudaGetDeviceCount(&cnt);
+	if (result == cudaSuccess)
+	{
+		count = cnt;
+	}
+	else
+	{
+		success = false;
+		m_errMsg = cudaGetErrorString(result);
+	}
+	return success;
+}
+
+
+bool CudaUtil::GetComputeCapability(int &major, int &minor)
+{
+	bool success = true;
+
+	cudaDeviceProp props;
+	cudaError_t result = cudaGetDeviceProperties(&props, 0);
+	if (result == cudaSuccess)
+	{
+		major = props.major;
+		minor = props.minor;
+	}
+	else
+	{
+		major = 0;
+		minor = 0;
+		m_errMsg = cudaGetErrorString(result);
+		success = false;
+	}
+
+	return success;
+}
+
+bool CudaUtil::GetDeviceName(std::string &name)
+{
+	bool success = true;
+
+	cudaDeviceProp props;
+	cudaError_t result = cudaGetDeviceProperties(&props, 0);
+	if (result == cudaSuccess)
+	{
+		name = props.name;
+	}
+	else
+	{
+		name = "unknown";
+		m_errMsg = cudaGetErrorString(result);
+		success = false;
+	}
+
+	return success;
+}
+
+bool CudaUtil::GetDeviceMemory(uint64_t &totalMem, uint64_t &freeMem)
+{
+	bool success = true;
+
+	size_t totmem = 0, freemem = 0;
+	cudaError_t result = cudaMemGetInfo(&freemem, &totmem);
+	if (result == cudaSuccess)
+	{
+		totalMem = totmem;
+		freeMem = freemem;
+	}
+	else
+	{
+		totalMem = 0;
+		freeMem = 0;
+		m_errMsg = cudaGetErrorString(result);
+		success = false;
+	}
+
+	return success;
+}
+
+
+std::string CudaUtil::GetLastErrorMessage()
+{
+	return m_errMsg;
+}
+
 //
 //
 //std::string CudaUtil::GetCudaErrorMessage(CUresult cudaResult)
 //{
-//	if (!m_cudaDriverReady)
-//	{
-//		return "Cuda Driver could not initialize";
-//	}
-//
-//
 //	char msg[2048];
 //	const char* pmsg = &msg[0];
 //	const char** ppmsg = &pmsg;

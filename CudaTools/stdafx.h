@@ -8,3 +8,4 @@
 
 #include "CudaPlot.h"
 #include "CudaImage.h"
+#include "CudaUtility.h"
