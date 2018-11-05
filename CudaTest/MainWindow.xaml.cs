@@ -53,7 +53,7 @@ namespace CudaTest
             traces.Add(new WPFTools.MultiChartArray_TraceItem("Indicator 1", 0, 100));
             traces.Add(new WPFTools.MultiChartArray_TraceItem("Indicator 2", 1, 200));
 
-            ChartArray.Init(16, 24, 10000, traces);  // NOTE: allocate for expected max number of points
+            ChartArray.Init(16, 24, 10000, traces, AggregateChart);  // NOTE: allocate for expected max number of points
                                                      // ~ 120 Megabytes/trace of GPU memory required for every 10,000 points
 
             ChartArray.SetDefaultChartRanges(WPFTools.MultiChartArray.SIGNAL_TYPE.RAW, 0, 10, 0, 10);
@@ -103,8 +103,8 @@ namespace CudaTest
             long t1 = sw.ElapsedTicks;
             double usecs = ((double)t1 / (double)Stopwatch.Frequency) * 1000000.0;
 
-            MessageBox.Show("Average = " + avg.ToString() + "     Execution Time = " + usecs.ToString() + " usecs", 
-                "Information", MessageBoxButton.OK, MessageBoxImage.Information);
+            //MessageBox.Show("Average = " + avg.ToString() + "     Execution Time = " + usecs.ToString() + " usecs", 
+            //    "Information", MessageBoxButton.OK, MessageBoxImage.Information);
 
         }
 

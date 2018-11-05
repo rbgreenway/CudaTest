@@ -1,0 +1,49 @@
+﻿<UserControl x:Class="WPFTools.AggregateChart"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             xmlns:local="clr-namespace:CudaTest"
+             mc:Ignorable="d" 
+             d:DesignHeight="300" d:DesignWidth="300">
+    <!-- Aggregate Chart Grid -->
+    <Grid Grid.Row="0" >
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Aggregate Chart Title Box (above aggregate chart) -->
+        <Grid Grid.Row="0" Background="LightBlue">
+            <TextBlock Text="Raw" x:Name="AggregateHeaderText" FontSize="16"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+        </Grid>
+
+        <!-- Aggregate Chart -->
+        <Grid Grid.Row="1" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+            
+            <Image x:Name="AggregateImage" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Stretch="Fill"
+                        Source="{Binding bitmap}"/>
+            
+            <TextBlock x:Name="YMaxText" HorizontalAlignment="Left" VerticalAlignment="Top" 
+                               FontSize="10" FontStyle="Italic" FontWeight="Light" Margin="5,0,0,0"
+                               Text="{Binding yMaxText}" Foreground="White" Background="Transparent" Panel.ZIndex="10"/>
+            <TextBlock x:Name="YMinText" HorizontalAlignment="Left" VerticalAlignment="Bottom" 
+                               FontSize="10" FontStyle="Italic" FontWeight="Light" Margin="5,0,0,0" 
+                               Text="{Binding yMinText}" Foreground="White" Background="Transparent" Panel.ZIndex="10"/>
+            <TextBlock x:Name="XMaxText" HorizontalAlignment="Right" VerticalAlignment="Bottom" 
+                               FontSize="10" FontStyle="Italic" FontWeight="Light" Margin="0,0,5,0"
+                               Text="{Binding xMaxText}" Foreground="White" Background="Transparent" Panel.ZIndex="10"/>
+        </Grid>
+
+        <!-- Grid for Trace Visibility Check Boxes -->
+        <Grid Grid.Row="2" Background="LightBlue">
+            <ScrollViewer VerticalScrollBarVisibility="Disabled" HorizontalScrollBarVisibility="Auto">
+                <StackPanel Orientation="Horizontal" x:Name="VisibilityStackPanel">
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+
+    </Grid>
+</UserControl>

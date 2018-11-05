@@ -5,121 +5,72 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
              xmlns:local="clr-namespace:WPFTools"             
              mc:Ignorable="d" 
-             d:DesignHeight="300" d:DesignWidth="300">
-    <Grid>
+             d:DesignHeight="400" d:DesignWidth="600">
+    <Grid x:Name="ChartGrid" IsHitTestVisible="True">
 
-
-        <!-- LEFT Panel -->
-        <Grid Grid.Column="0" x:Name="ChartGrid" IsHitTestVisible="True">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="20"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="5"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
-            <Grid.RowDefinitions>
-                <RowDefinition Height="20"/>
-                <RowDefinition Height="*"/>
-                <RowDefinition Height="40"/>
-            </Grid.RowDefinitions>
-
-            <GridSplitter Grid.Row="0" Grid.Column="2" Grid.RowSpan="3" Width="5" HorizontalAlignment="Stretch"/>
+            <!-- LEFT Panel START -->
             
-            <Grid Grid.Row="0" Grid.Column="3" Grid.RowSpan="3">
+            <Grid Grid.Column="0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="20"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="20"/>
                     <RowDefinition Height="*"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="40"/>
                 </Grid.RowDefinitions>
 
-                <Grid Grid.Row="0" Background="LightBlue">
-                    <TextBlock Text="Raw" x:Name="AggregateHeaderText" FontSize="16"
-                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                <Button Name="SelectAllPB" Grid.Column="0" Grid.Row="0" Click="SelectAllPB_Click"/>
+
+                <Grid Name="ColumnButtonGrid" Grid.Column="1" Grid.Row="0"/>
+
+                <Grid Name="RowButtonGrid" Grid.Column="0" Grid.Row="1"/>
+
+                <Grid Name="ChartArrayGrid" Grid.Column="1" Grid.Row="1" UseLayoutRounding="True" Background="Black" IsHitTestVisible="True">
+
+                    <Image Grid.Row="0" Grid.Column="0" Name="imageBitmap" Panel.ZIndex="10"
+                       Stretch="Fill" Margin="0"
+                       Source="{Binding Path=bitmap}"
+                       IsHitTestVisible="False"               
+                       />
+
+                    <Image Grid.Row="0" Grid.Column="0" Name="overlayBitmap" Panel.ZIndex="12"
+                       Stretch="Fill" Margin="0"
+                       Source="{Binding Path=overlay}"
+                       IsHitTestVisible="True" 
+                           MouseLeftButtonUp="ChartArray_MouseLeftButtonUp"
+                           MouseLeftButtonDown="ChartArray_MouseLeftButtonDown"
+                           MouseMove="ChartArrayGrid_MouseMove"
+                           MouseLeave="ChartArrayGrid_MouseLeave"
+                       />
                 </Grid>
 
-                <Grid Grid.Row="1" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
-                    <Image x:Name="AggregateImage" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Stretch="Fill"
-                        Source="{Binding aggregateBitmap}"
-                           SizeChanged="AggregateImage_SizeChanged"/>
-                    <TextBlock x:Name="YMaxText" HorizontalAlignment="Left" VerticalAlignment="Top" 
-                               FontSize="10" FontStyle="Italic" FontWeight="Light" Margin="5,0,0,0"
-                               Text="{Binding yMaxText}" Foreground="White" Background="Transparent" Panel.ZIndex="10"/>
-                    <TextBlock x:Name="YMinText" HorizontalAlignment="Left" VerticalAlignment="Bottom" 
-                               FontSize="10" FontStyle="Italic" FontWeight="Light" Margin="5,0,0,0" 
-                               Text="{Binding yMinText}" Foreground="White" Background="Transparent" Panel.ZIndex="10"/>
-                    <TextBlock x:Name="XMaxText" HorizontalAlignment="Right" VerticalAlignment="Bottom" 
-                               FontSize="10" FontStyle="Italic" FontWeight="Light" Margin="0,0,5,0"
-                               Text="{Binding xMaxText}" Foreground="White" Background="Transparent" Panel.ZIndex="10"/>
-                </Grid>
 
-                <Grid Grid.Row="2" Background="LightBlue">
-                    <ScrollViewer VerticalScrollBarVisibility="Disabled" HorizontalScrollBarVisibility="Auto">
-                        <StackPanel Orientation="Horizontal" x:Name="VisibilityStackPanel">                          
-                        </StackPanel>
-                    </ScrollViewer>
-                </Grid>                     
-
-                <Grid x:Name="ImageDisplayGrid" Grid.Row="3">
-                    <local:ImageDisplay HorizontalAlignment="Stretch" VerticalAlignment="Stretch"/>
-                </Grid>
-
-            </Grid>
-            
-
-            <Button Name="SelectAllPB" Grid.Column="0" Grid.Row="0" Click="SelectAllPB_Click"/>
-
-            <Grid Name="ColumnButtonGrid" Grid.Column="1" Grid.Row="0"/>
-
-            <Grid Name="RowButtonGrid" Grid.Column="0" Grid.Row="1"/>
-
-            <Grid Name="ChartArrayGrid" Grid.Column="1" Grid.Row="1"             
-              UseLayoutRounding="True" Background="Black"
-                  IsHitTestVisible="True">
-            
-                <Image Grid.Row="0" Grid.Column="0" Name="imageBitmap" Panel.ZIndex="10"
-                   Stretch="Fill" Margin="0"
-                   Source="{Binding Path=bitmap}"
-                   IsHitTestVisible="False"               
-                   />
-
-                <Image Grid.Row="0" Grid.Column="0" Name="overlayBitmap" Panel.ZIndex="12"
-                   Stretch="Fill" Margin="0"
-                   Source="{Binding Path=overlay}"
-                   IsHitTestVisible="True" 
-                       MouseLeftButtonUp="ChartArray_MouseLeftButtonUp"
-                       MouseLeftButtonDown="ChartArray_MouseLeftButtonDown"
-                       MouseMove="ChartArrayGrid_MouseMove"
-                       MouseLeave="ChartArrayGrid_MouseLeave"
-                   />
-
-
-            </Grid>
-            <!-- END ChartArrayGrid-->
-
-            <GroupBox Grid.Column="0" Grid.Row="2" Grid.ColumnSpan="2"  Header="Analysis Type To Display"
+                <GroupBox Grid.Column="0" Grid.Row="2" Grid.ColumnSpan="2"  Header="Analysis Type To Display"
                     HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
                     x:Name="AnalysisGroup">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <RadioButton GroupName="AnalysisGroup" Tag="Raw" x:Name="RawRadioButton" IsChecked="True"
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <RadioButton GroupName="AnalysisGroup" Tag="Raw" x:Name="RawRadioButton" IsChecked="True"
                                  Click="AnalysisRadioButton_Click" Content="Raw" Grid.Column="0"/>
-                    <RadioButton GroupName="AnalysisGroup" Tag="ControlSubtraction" x:Name="ControlSubtractionRadioButton"
+                        <RadioButton GroupName="AnalysisGroup" Tag="ControlSubtraction" x:Name="ControlSubtractionRadioButton"
                                  Click="AnalysisRadioButton_Click" Content="Ctrl Subtract" Grid.Column="1"/>
-                    <RadioButton GroupName="AnalysisGroup" Tag="StaticRatio" x:Name="StaticRatioRadioButton"
-                                 Click="AnalysisRadioButton_Click" Content="Static Ratio" Grid.Column="2"/>                    
-                    <RadioButton GroupName="AnalysisGroup" Tag="DynamicRatio" x:Name="DynamicRatioRadioButton"
+                        <RadioButton GroupName="AnalysisGroup" Tag="StaticRatio" x:Name="StaticRatioRadioButton"
+                                 Click="AnalysisRadioButton_Click" Content="Static Ratio" Grid.Column="2"/>
+                        <RadioButton GroupName="AnalysisGroup" Tag="DynamicRatio" x:Name="DynamicRatioRadioButton"
                                  Click="AnalysisRadioButton_Click" Content="Dynamic Ratio" Grid.Column="3"/>
-                </Grid>
-            </GroupBox>
+                    </Grid>
+                </GroupBox>
 
-        </Grid>
+            </Grid>
 
+            <!-- LEFT Panel END -->
 
     </Grid>
 </UserControl>
