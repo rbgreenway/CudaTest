@@ -97,8 +97,6 @@ namespace WPFTools
 
         Dictionary<SIGNAL_TYPE, ChartArray> m_chartArrays;
 
-        MultiChartArray_ViewModel m_vm;
-
         TaskScheduler m_uiTask;
 
         CancellationTokenSource m_tokenSource;
@@ -110,7 +108,28 @@ namespace WPFTools
         public int m_totalPoints;
 
         ImageTool m_imageTool;
-       
+
+
+        /// <summary>
+        /// /////////////////////////////////////////////////////////////////////////////////////////////////
+        /// </summary>
+
+
+        public AggregateChart m_aggregateChart;
+        public int m_rows;
+        public int m_cols;
+        public int m_numTraces;
+        public Dictionary<int, MultiChartArray_TraceItem> m_traces;
+        public Dictionary<Tuple<int, MultiChartArray.SIGNAL_TYPE>, Color> m_traceColors;
+        public int m_maxPoints;
+        public int m_chartArrayWidth;
+        public int m_chartArrayHeight;
+        public int m_padding;
+        public int m_margin;
+        public WriteableBitmap m_bitmap;
+        public WriteableBitmap m_overlay;
+
+        ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
         public MultiChartArray()
@@ -132,9 +151,56 @@ namespace WPFTools
             int numTraces = traces.Count;
             int margin = 1;
             int padding = 3;
+            
+            ////////////////////////////////////////////////////////////////////////////////////////////////
 
-            m_vm = new MultiChartArray_ViewModel(rows, cols, padding, margin, maxNumPoints, traces, aggregateChart);
-            DataContext = m_vm;
+
+            m_chartArrayWidth = 0;
+            m_chartArrayHeight = 0;
+
+            m_cols = cols;
+            m_rows = rows;
+            m_padding = padding;
+            m_margin = margin;
+            m_maxPoints = maxNumPoints;
+            m_numTraces = traces.Count;
+            m_aggregateChart = aggregateChart;
+
+            // initialize traces and trace colors
+            int traceNum = 0;
+            m_traces = new Dictionary<int, MultiChartArray_TraceItem>();
+            m_traceColors = new Dictionary<Tuple<int, MultiChartArray.SIGNAL_TYPE>, Color>();
+            foreach (MultiChartArray_TraceItem item in traces)
+            {
+                item.traceNum = traceNum;
+                m_traces.Add(item.id, item);
+                traceNum++;
+
+                // initialize trace colors                    
+                foreach (int value in Enum.GetValues(typeof(MultiChartArray.SIGNAL_TYPE)))
+                {
+                    MultiChartArray.SIGNAL_TYPE signal = (MultiChartArray.SIGNAL_TYPE)value;
+                    m_traceColors.Add(Tuple.Create<int, MultiChartArray.SIGNAL_TYPE>(item.id, signal), Colors.Yellow);  // default to yellow
+                }
+            }
+
+
+
+            int pixelsPerChart = 42;
+
+            int newWidth =  (pixelsPerChart * m_cols) + ((m_cols - 1) * m_padding) + (2 * m_margin);
+            int newHeight = (pixelsPerChart * m_rows) + ((m_rows - 1) * m_padding) + (2 * m_margin);
+
+            byte[] img = SynthesizeImage(newWidth, newHeight);
+
+            SetBitmap(img, newWidth, newHeight);
+
+            if (aggregateChart != null)
+            {
+                aggregateChart.SetBitmap(img, newWidth / 2, newHeight / 2);
+                aggregateChart.SetRanges(1, 0, 1);
+            }
+            
 
             ////////////////////////////////////////////////////////////////////////////////////////
 
@@ -155,7 +221,7 @@ namespace WPFTools
 
 
             BuildChartArray();
-            SetupVisiblityCheckBoxes(m_vm.traces);
+            SetupVisiblityCheckBoxes(m_traces);
 
             m_refreshTimer = new DispatcherTimer();
             m_refreshTimer.Tick += M_refreshTimer_Tick;
@@ -164,13 +230,16 @@ namespace WPFTools
 
             m_newDataAdded = false;
             m_dataPipeline = CreateDataPipeline(m_tokenSource.Token, m_chartArrays);
-            m_guiPipeline = CreateGuiPipeline(m_uiTask, m_tokenSource.Token, m_chartArrays, m_vm, aggregateChart);
+            m_guiPipeline = CreateGuiPipeline(m_uiTask, m_tokenSource.Token, m_chartArrays, aggregateChart);
 
             if(aggregateChart != null)
             {
                 aggregateChart.SizeChanged += AggregateChart_SizeChanged;
             }
-            
+
+
+
+
         }
 
      
@@ -179,9 +248,9 @@ namespace WPFTools
         {
             // add data to chart array (the x array is superfluous since it contains all the same values, should just be an int, not int[])
             //m_chartArrays[signal].AppendData(x, y);
-            if (m_vm.traces.ContainsKey(id))
+            if (m_traces.ContainsKey(id))
             {
-                m_dataPipeline.Post(Tuple.Create<int[], int[], SIGNAL_TYPE, int>(x, y, signal, m_vm.traces[id].traceNum));
+                m_dataPipeline.Post(Tuple.Create<int[], int[], SIGNAL_TYPE, int>(x, y, signal, m_traces[id].traceNum));
                 m_newDataAdded = true;
             }
         }
@@ -228,34 +297,29 @@ namespace WPFTools
         }
 
 
-        //public void PrintAggregateImage()
-        //{
-        //    BitmapImage bmi = ConvertWriteableBitmapToBitmapImage(m_vm.aggregateBitmap);
-        //    PrintBitmapSource(bmi);
-        //}
 
         public void UpdateAggregateRange()
         {
-            if(m_vm.aggregateChart != null)
+            if(m_aggregateChart != null)
             {
                 m_chartArrays[m_visibleSignal].GetRanges(ref m_axisRange);
-                m_vm.aggregateChart.UpdateRanges(m_axisRange[1], m_axisRange[2], m_axisRange[3]);
+                m_aggregateChart.UpdateRanges(m_axisRange[1], m_axisRange[2], m_axisRange[3]);
             }
         }
 
         public int NumRows()
         {
-            return m_vm.rows;
+            return m_rows;
         }
 
         public int NumCols()
         {
-            return m_vm.cols;
+            return m_cols;
         }
 
         public int MaxNumPoints()
         {
-            return m_vm.maxPoints;
+            return m_maxPoints;
         }
 
 
@@ -265,43 +329,43 @@ namespace WPFTools
         public void BuildChartArray()
         {
             m_chartArrays = new Dictionary<SIGNAL_TYPE, ChartArray>();
-            int initialYmax = (m_vm.maxPoints > 100) ? 100 : m_vm.maxPoints;
+            int initialYmax = (m_maxPoints > 100) ? 100 : m_maxPoints;
             int initialXmax = 10;
             int aggregateWidth = 256;
             int aggregateHeight = 256;
-            if(m_vm.aggregateChart != null) { aggregateWidth = m_vm.aggregateChart.m_vm.width; aggregateHeight = m_vm.aggregateChart.m_vm.height; }
+            if(m_aggregateChart != null) { aggregateWidth = m_aggregateChart.m_width; aggregateHeight = m_aggregateChart.m_height; }
 
             foreach (int value in Enum.GetValues(typeof(SIGNAL_TYPE)))
             {
                 SIGNAL_TYPE signal = (SIGNAL_TYPE)value;
                 m_chartArrays.Add(signal, new ChartArray());
-                m_chartArrays[signal].Init(m_vm.rows, m_vm.cols, m_vm.chartArrayWidth, m_vm.chartArrayHeight, m_vm.margin, m_vm.padding,
+                m_chartArrays[signal].Init(m_rows, m_cols, m_chartArrayWidth, m_chartArrayHeight, m_margin, m_padding,
                        aggregateWidth, aggregateHeight,
                        Colors.DarkBlue, Colors.Black, Color.FromArgb(255, 85, 85, 85), Colors.Black, Colors.White,
                        Colors.Yellow,
-                       0, initialXmax, 0, initialYmax, m_vm.maxPoints, m_vm.numTraces);
+                       0, initialXmax, 0, initialYmax, m_maxPoints, m_numTraces);
                 m_chartArrays[signal].Redraw();
                 m_chartArrays[signal].RedrawAggregate();
             }
 
             int maxTraces = m_chartArrays[SIGNAL_TYPE.RAW].GetMaxNumberOfTraces();
-            if (m_vm.numTraces > maxTraces) m_vm.numTraces = maxTraces;
+            if (m_numTraces > maxTraces) m_numTraces = maxTraces;
 
-            WriteableBitmap bmap = m_vm.bitmap;
+            WriteableBitmap bmap = m_bitmap;
             m_chartArrays[m_visibleSignal].Refresh(ref bmap);
 
 
-            if (m_vm.aggregateChart != null)
+            if (m_aggregateChart != null)
             {
-                WriteableBitmap aggregateBitmapRef = m_vm.aggregateChart.m_vm.bitmap;
+                WriteableBitmap aggregateBitmapRef = m_aggregateChart.m_bitmap;
                 m_chartArrays[m_visibleSignal].RefreshAggregate(ref aggregateBitmapRef);
             }
 
             // creat the range of each series
-            m_chartSelected = new bool[m_vm.rows, m_vm.cols];
+            m_chartSelected = new bool[m_rows, m_cols];
 
-            m_allChartsInColumnSelected = new bool[m_vm.cols];
-            m_allChartsInRowSelected = new bool[m_vm.rows];
+            m_allChartsInColumnSelected = new bool[m_cols];
+            m_allChartsInRowSelected = new bool[m_rows];
             SetUpChartArrayButtons();
         }
 
@@ -325,12 +389,12 @@ namespace WPFTools
             m_chartArrays[signal].SetTraceColor(traceNum, color);
 
             // find trace id from the given signal and traceNum
-            foreach(KeyValuePair<int,MultiChartArray_TraceItem> item in m_vm.traces)
+            foreach(KeyValuePair<int,MultiChartArray_TraceItem> item in m_traces)
             {
                 if(item.Value.traceNum == traceNum)
                 {
                     int id = item.Value.id;
-                    m_vm.traceColors[Tuple.Create<int, SIGNAL_TYPE>(id, signal)] = color;
+                    m_traceColors[Tuple.Create<int, SIGNAL_TYPE>(id, signal)] = color;
                     break;
                 }
             }
@@ -370,9 +434,9 @@ namespace WPFTools
                 rect.Margin = new Thickness(4, 0, 0, 0);                
                 sp.Children.Add(rect);
 
-                if (m_vm.aggregateChart != null)
+                if (m_aggregateChart != null)
                 {
-                    m_vm.aggregateChart.AddCheckBox(sp);                    
+                    m_aggregateChart.AddCheckBox(sp);                    
                 }
                 else
                 {
@@ -389,14 +453,14 @@ namespace WPFTools
             SIGNAL_TYPE signal = m_visibleSignal;
 
 
-            if(m_vm.aggregateChart != null)
+            if(m_aggregateChart != null)
             {
-                StackPanel VisibilityStackPanel = m_vm.aggregateChart.GetVisibilityStackPanel();
+                StackPanel VisibilityStackPanel = m_aggregateChart.GetVisibilityStackPanel();
 
-                foreach (KeyValuePair<int, MultiChartArray_TraceItem> item in m_vm.traces)
+                foreach (KeyValuePair<int, MultiChartArray_TraceItem> item in m_traces)
                 {
                     int id = item.Value.id;
-                    Color color = m_vm.traceColors[Tuple.Create<int, SIGNAL_TYPE>(id, signal)];
+                    Color color = m_traceColors[Tuple.Create<int, SIGNAL_TYPE>(id, signal)];
 
                     // find the visibility checkbox stackpanel with this id
                     foreach (UIElement child1 in VisibilityStackPanel.Children)
@@ -436,7 +500,7 @@ namespace WPFTools
                 CheckBox cb = (CheckBox)e.Source;
                 int id = (int)cb.Tag;
 
-                foreach(KeyValuePair<int, MultiChartArray_TraceItem> item in m_vm.traces)
+                foreach(KeyValuePair<int, MultiChartArray_TraceItem> item in m_traces)
                 {
                     if(item.Value.id == id)
                     {
@@ -465,13 +529,13 @@ namespace WPFTools
             SolidColorBrush brush = new SolidColorBrush(m_buttonColorNotSelected);
 
             double fontSize;
-            if (m_vm.cols < 32)
+            if (m_cols < 32)
                 fontSize = 10;
             else
                 fontSize = 6;
             
 
-            for (int i = 0; i < m_vm.cols; i++)
+            for (int i = 0; i < m_cols; i++)
             {
                 ColumnDefinition colDef = new ColumnDefinition();
                 ColumnButtonGrid.ColumnDefinitions.Add(colDef);
@@ -494,7 +558,7 @@ namespace WPFTools
                 button.Background = brush;
             }
 
-            for (int i = 0; i < m_vm.rows; i++)
+            for (int i = 0; i < m_rows; i++)
             {
                 RowDefinition rowDef = new RowDefinition();
                 RowButtonGrid.RowDefinitions.Add(rowDef);
@@ -540,7 +604,7 @@ namespace WPFTools
         {
             bool result = true;
 
-            for (int c = 0; c < m_vm.cols; c++)
+            for (int c = 0; c < m_cols; c++)
             {
                 if (!m_chartSelected[row, c])
                 {
@@ -557,7 +621,7 @@ namespace WPFTools
         {
             bool result = true;
 
-            for (int r = 0; r < m_vm.rows; r++)
+            for (int r = 0; r < m_rows; r++)
             {
                 if (!m_chartSelected[r, col])
                 {
@@ -574,7 +638,7 @@ namespace WPFTools
         {
             bool result = true;
 
-            for (int r = 0; r < m_vm.rows; r++)
+            for (int r = 0; r < m_rows; r++)
             {
                 if (!IsRowSeleted(r))
                 {
@@ -592,7 +656,7 @@ namespace WPFTools
             SolidColorBrush brushSelected = new SolidColorBrush(m_buttonColorSelected);
             SolidColorBrush brushNotSelected = new SolidColorBrush(m_buttonColorNotSelected);
             bool all = true;
-            for (int r = 0; r < m_vm.rows; r++)
+            for (int r = 0; r < m_rows; r++)
             {
                 m_allChartsInRowSelected[r] = IsRowSeleted(r);
                 if (!m_allChartsInRowSelected[r])
@@ -603,7 +667,7 @@ namespace WPFTools
                 else m_rowButton.ElementAt(r).Background = brushSelected;
             }
 
-            for (int c = 0; c < m_vm.cols; c++)
+            for (int c = 0; c < m_cols; c++)
             {
                 m_allChartsInColumnSelected[c] = IsColumnSeleted(c);
                 if (!m_allChartsInColumnSelected[c])
@@ -630,9 +694,9 @@ namespace WPFTools
             bool state;
             if (AreAllSelected()) state = false; else state = true;
 
-            for (int c = 0; c < m_vm.cols; c++)
+            for (int c = 0; c < m_cols; c++)
             {
-                for (int r = 0; r < m_vm.rows; r++)
+                for (int r = 0; r < m_rows; r++)
                 {
                     m_chartSelected[r, c] = state;
                 }
@@ -656,7 +720,7 @@ namespace WPFTools
                 int columnNumber = tag.position;
                 if (m_allChartsInColumnSelected[columnNumber]) state = false; else state = true;
 
-                for (int r = 0; r < m_vm.rows; r++)
+                for (int r = 0; r < m_rows; r++)
                 {
                     m_chartSelected[r, columnNumber] = state;
                 }
@@ -666,7 +730,7 @@ namespace WPFTools
                 int rowNumber = tag.position;
                 if (m_allChartsInRowSelected[rowNumber]) state = false; else state = true;
 
-                for (int c = 0; c < m_vm.cols; c++)
+                for (int c = 0; c < m_cols; c++)
                 {
                     m_chartSelected[rowNumber, c] = state;
                 }
@@ -702,8 +766,8 @@ namespace WPFTools
             {
                 m_mouseDownPoint = e.GetPosition(overlayBitmap);
 
-                int x = (int)(m_mouseDownPoint.X / overlayBitmap.ActualWidth * m_vm.overlay.PixelWidth);
-                int y = (int)(m_mouseDownPoint.Y / overlayBitmap.ActualHeight * m_vm.overlay.PixelHeight);
+                int x = (int)(m_mouseDownPoint.X / overlayBitmap.ActualWidth * m_overlay.PixelWidth);
+                int y = (int)(m_mouseDownPoint.Y / overlayBitmap.ActualHeight * m_overlay.PixelHeight);
 
                 m_mouseUpRow = m_chartArrays[m_visibleSignal].GetRowFromY(y);
                 m_mouseUpCol = m_chartArrays[m_visibleSignal].GetColumnFromX(x);
@@ -744,7 +808,7 @@ namespace WPFTools
 
             }
 
-            m_vm.overlay.Clear();
+            m_overlay.Clear();
 
             e.Handled = true;
 
@@ -756,8 +820,8 @@ namespace WPFTools
         {
             m_mouseDownPoint = e.GetPosition(overlayBitmap);
 
-            int x = (int)(m_mouseDownPoint.X / overlayBitmap.ActualWidth * m_vm.overlay.PixelWidth);
-            int y = (int)(m_mouseDownPoint.Y / overlayBitmap.ActualHeight * m_vm.overlay.PixelHeight);
+            int x = (int)(m_mouseDownPoint.X / overlayBitmap.ActualWidth * m_overlay.PixelWidth);
+            int y = (int)(m_mouseDownPoint.Y / overlayBitmap.ActualHeight * m_overlay.PixelHeight);
 
             m_mouseDownCol = m_chartArrays[m_visibleSignal].GetColumnFromX(x);
             m_mouseDownRow = m_chartArrays[m_visibleSignal].GetRowFromY(y);
@@ -773,7 +837,7 @@ namespace WPFTools
 
         private void ChartArrayGrid_MouseLeave(object sender, MouseEventArgs e)
         {
-            m_vm.overlay.Clear();
+            m_overlay.Clear();
 
             // reset the mouse down locations
             m_mouseDownRow = -1;
@@ -784,14 +848,14 @@ namespace WPFTools
 
         private void ChartArrayGrid_MouseMove(object sender, MouseEventArgs e)
         {
-            m_vm.overlay.Clear();
+            m_overlay.Clear();
 
             if (m_mouseDownRow != -1) // mouse button is down
             {
                 Point pt = e.GetPosition(overlayBitmap);
 
-                m_drag.X = pt.X / overlayBitmap.ActualWidth * m_vm.overlay.PixelWidth;
-                m_drag.Y = pt.Y / overlayBitmap.ActualHeight * m_vm.overlay.PixelHeight;
+                m_drag.X = pt.X / overlayBitmap.ActualWidth * m_overlay.PixelWidth;
+                m_drag.Y = pt.Y / overlayBitmap.ActualHeight * m_overlay.PixelHeight;
 
                 int x1, x2, y1, y2;
 
@@ -818,8 +882,8 @@ namespace WPFTools
                     y2 = (int)(m_dragDown.Y);
                 }
 
-                m_vm.overlay.DrawRectangle(x1, y1, x2, y2, Colors.Red);
-                m_vm.overlay.DrawRectangle(x1 + 1, y1 + 1, x2 - 1, y2 - 1, Colors.Red);
+                m_overlay.DrawRectangle(x1, y1, x2, y2, Colors.Red);
+                m_overlay.DrawRectangle(x1 + 1, y1 + 1, x2 - 1, y2 - 1, Colors.Red);
             }
         }
 
@@ -841,12 +905,12 @@ namespace WPFTools
 
         private void AggregateChart_SizeChanged(object sender, SizeChangedEventArgs e)
         {
-            if (m_vm.aggregateChart != null)
+            if (m_aggregateChart != null)
             {
                 int w = (int)imageBitmap.ActualWidth;
                 int h = (int)imageBitmap.ActualHeight;
-                int aggw = (int)m_vm.aggregateChart.AggregateImage.ActualWidth;
-                int aggh = (int)m_vm.aggregateChart.AggregateImage.ActualHeight;
+                int aggw = (int)m_aggregateChart.AggregateImage.ActualWidth;
+                int aggh = (int)m_aggregateChart.AggregateImage.ActualHeight;
                 if (w == 0)
                 {
                     w = 512; h = 512;
@@ -874,7 +938,7 @@ namespace WPFTools
         public void GetBestBitmapSize(ref int width, ref int height, ref int chartPanelWidth, ref int chartPanelHeight)
         {
             int w = 0, h = 0, pw = 0, ph = 0;
-            m_vm.OptimizeBitmapSize((int)imageBitmap.ActualWidth, (int)imageBitmap.ActualHeight, ref w, ref h, ref pw, ref ph);
+            OptimizeBitmapSize((int)imageBitmap.ActualWidth, (int)imageBitmap.ActualHeight, ref w, ref h, ref pw, ref ph);
             width = w;
             height = h;
             chartPanelWidth = pw;
@@ -900,23 +964,23 @@ namespace WPFTools
             {
                 case "Raw":
                     m_visibleSignal = SIGNAL_TYPE.RAW;
-                    m_vm.aggregateChart.SetHeaderText("Raw");
+                    m_aggregateChart.SetHeaderText("Raw");
                     break;
                 case "StaticRatio":
                     m_visibleSignal = SIGNAL_TYPE.STATIC_RATIO;
-                    m_vm.aggregateChart.SetHeaderText("Static Ratio");                    
+                    m_aggregateChart.SetHeaderText("Static Ratio");                    
                     break;
                 case "ControlSubtraction":
                     m_visibleSignal = SIGNAL_TYPE.CONTROL_SUBTRACTION;
-                    m_vm.aggregateChart.SetHeaderText("Control Subtraction");                    
+                    m_aggregateChart.SetHeaderText("Control Subtraction");                    
                     break;
                 case "DynamicRatio":
                     m_visibleSignal = SIGNAL_TYPE.DYNAMIC_RATIO;
-                    m_vm.aggregateChart.SetHeaderText("Dynamic Ratio");
+                    m_aggregateChart.SetHeaderText("Dynamic Ratio");
                     break;
                 default:
                     m_visibleSignal = SIGNAL_TYPE.RAW;
-                    m_vm.aggregateChart.SetHeaderText("Raw");
+                    m_aggregateChart.SetHeaderText("Raw");
                     break;
             }
    
@@ -986,10 +1050,9 @@ namespace WPFTools
         public ITargetBlock<Tuple<int[], int[], SIGNAL_TYPE, int, COMMAND_TYPE>> CreateGuiPipeline(TaskScheduler uiTask,
                            CancellationToken cancelToken,
                            Dictionary<SIGNAL_TYPE, ChartArray> _charts,
-                           MultiChartArray_ViewModel _vm, AggregateChart _aggregateChart)
+                           AggregateChart _aggregateChart)
         {
             Dictionary<SIGNAL_TYPE, ChartArray> charts = _charts;
-            MultiChartArray_ViewModel vm = _vm;
             AggregateChart aggregateChart = _aggregateChart;
             SIGNAL_TYPE visibleSignal = SIGNAL_TYPE.RAW;
             int[] axisRange = new int[4];
@@ -1022,25 +1085,25 @@ namespace WPFTools
                             // resize chartArray and aggregate bitmaps                                              
                             // find the optimal size to best fit the Actual window size
 
-                            int pixelWidthPerChart = (x[0] - (2 * vm.margin) - ((vm.cols - 1) * vm.padding)) / vm.cols;
-                            int pixelHeightPerChart = (y[0] - (2 * vm.margin) - ((vm.rows - 1) * vm.padding)) / vm.rows;
+                            int pixelWidthPerChart = (x[0] - (2 * m_margin) - ((m_cols - 1) * m_padding)) / m_cols;
+                            int pixelHeightPerChart = (y[0] - (2 * m_margin) - ((m_rows - 1) * m_padding)) / m_rows;
 
-                            int w = (pixelWidthPerChart * vm.cols) + ((vm.cols - 1) * vm.padding) + (2 * vm.margin);
-                            int h = (pixelHeightPerChart * vm.rows) + ((vm.rows - 1) * vm.padding) + (2 * vm.margin);
+                            int w = (pixelWidthPerChart * m_cols) + ((m_cols - 1) * m_padding) + (2 * m_margin);
+                            int h = (pixelHeightPerChart * m_rows) + ((m_rows - 1) * m_padding) + (2 * m_margin);
 
-                            if (w != vm.chartArrayWidth || h != vm.chartArrayHeight)
+                            if (w != m_chartArrayWidth || h != m_chartArrayHeight)
                             {
-                                vm.chartArrayWidth = w;
-                                vm.chartArrayHeight = h;
+                                m_chartArrayWidth = w;
+                                m_chartArrayHeight = h;
                                 if (aggregateChart != null)
                                 {
-                                    aggregateChart.m_vm.width = x[1];
-                                    aggregateChart.m_vm.height = y[1];
-                                    aggregateChart.m_vm.bitmap = BitmapFactory.New(x[1], y[1]);
+                                    aggregateChart.SetBitmap(BitmapFactory.New(x[1], y[1]));                                   
                                 }
 
-                                vm.bitmap = BitmapFactory.New(w, h);
-                                vm.overlay = BitmapFactory.New(w, h);
+                                m_bitmap = BitmapFactory.New(w, h);
+                                m_overlay = BitmapFactory.New(w, h);
+                                imageBitmap.Source = m_bitmap;
+                                overlayBitmap.Source = m_overlay;
                                
 
                                 foreach (int value in Enum.GetValues(typeof(SIGNAL_TYPE)))
@@ -1052,14 +1115,14 @@ namespace WPFTools
 
                             // refresh chart array
                             charts[visibleSignal].Redraw();
-                            WriteableBitmap bitmapRef4 = vm.bitmap;
+                            WriteableBitmap bitmapRef4 = m_bitmap;
                             charts[visibleSignal].Refresh(ref bitmapRef4);
 
                             // refresh aggregate chart
                             if (aggregateChart != null)
                             {
                                 charts[visibleSignal].RedrawAggregate();
-                                WriteableBitmap aggregateBitmapRef4 = aggregateChart.m_vm.bitmap;
+                                WriteableBitmap aggregateBitmapRef4 = aggregateChart.m_bitmap;
                                 charts[visibleSignal].RefreshAggregate(ref aggregateBitmapRef4);
                             }
                             
@@ -1070,21 +1133,19 @@ namespace WPFTools
 
                             // refresh chart array image
                             charts[visibleSignal].Redraw();
-                            WriteableBitmap bitmapRef1 = vm.bitmap;
+                            WriteableBitmap bitmapRef1 = m_bitmap;
                             charts[visibleSignal].Refresh(ref bitmapRef1);
 
                             // refresh aggregate image
                             if (aggregateChart != null)
                             {
                                 charts[visibleSignal].RedrawAggregate();
-                                WriteableBitmap aggregateBitmapRef4 = aggregateChart.m_vm.bitmap;
+                                WriteableBitmap aggregateBitmapRef4 = aggregateChart.m_bitmap;
                                 charts[visibleSignal].RefreshAggregate(ref aggregateBitmapRef4);
 
                                 // update the range labels                               
-                                charts[visibleSignal].GetRanges(ref axisRange);                                
-                                aggregateChart.m_vm.xMaxText = axisRange[1].ToString();
-                                aggregateChart.m_vm.yMinText = axisRange[2].ToString();
-                                aggregateChart.m_vm.yMaxText = axisRange[3].ToString();
+                                charts[visibleSignal].GetRanges(ref axisRange);
+                                aggregateChart.SetRanges(axisRange[1], axisRange[2], axisRange[3]);
                             }
                             
                             break;
@@ -1102,19 +1163,17 @@ namespace WPFTools
                             }
                           
 
-                            WriteableBitmap bitmapRef2 = vm.bitmap;
+                            WriteableBitmap bitmapRef2 = m_bitmap;
                             charts[visibleSignal].Refresh(ref bitmapRef2);
 
                             if (aggregateChart != null)
                             {
-                                WriteableBitmap aggregateBitmapRef2 = aggregateChart.m_vm.bitmap;
+                                WriteableBitmap aggregateBitmapRef2 = aggregateChart.m_bitmap;
                                 charts[visibleSignal].RefreshAggregate(ref aggregateBitmapRef2);
 
                                 // update the range labels                               
                                 charts[visibleSignal].GetRanges(ref axisRange);
-                                aggregateChart.m_vm.xMaxText = axisRange[1].ToString();
-                                aggregateChart.m_vm.yMinText = axisRange[2].ToString();
-                                aggregateChart.m_vm.yMaxText = axisRange[3].ToString();
+                                aggregateChart.SetRanges(axisRange[1], axisRange[2], axisRange[3]);
                             }
 
                             m_totalPoints = 0;
@@ -1122,11 +1181,11 @@ namespace WPFTools
 
                         case COMMAND_TYPE.SET_SELECTED:
                             // have to convert to a 1D bool array, because that's what is needed by the C++ function
-                            bool[] temp = new bool[vm.rows * vm.cols];
-                            for (int r = 0; r < vm.rows; r++)
-                                for (int c = 0; c < vm.cols; c++)
+                            bool[] temp = new bool[m_rows * m_cols];
+                            for (int r = 0; r < m_rows; r++)
+                                for (int c = 0; c < m_cols; c++)
                                 {
-                                    temp[r * vm.cols + c] = m_chartSelected[r, c];
+                                    temp[r * m_cols + c] = m_chartSelected[r, c];
                                 }
 
                             foreach (int value in Enum.GetValues(typeof(SIGNAL_TYPE)))
@@ -1138,7 +1197,7 @@ namespace WPFTools
 
                                 if (signal == visibleSignal)
                                 {
-                                    WriteableBitmap bitmapRef3 = vm.bitmap;
+                                    WriteableBitmap bitmapRef3 = m_bitmap;
                                     charts[signal].SetSelectedCharts(temp, ref bitmapRef3);
                                 }
                                 else
@@ -1154,7 +1213,7 @@ namespace WPFTools
 
                                     if (signal == visibleSignal)
                                     {
-                                        WriteableBitmap aggregateBitmapRef3 = aggregateChart.m_vm.bitmap;
+                                        WriteableBitmap aggregateBitmapRef3 = aggregateChart.m_bitmap;
                                         charts[visibleSignal].RefreshAggregate(ref aggregateBitmapRef3);
                                     }
                                 }
@@ -1184,6 +1243,69 @@ namespace WPFTools
 
 
 
+
+        public void SetBitmap(byte[] imageData, int newWidth, int newHeight)
+        {
+            if (newWidth != m_chartArrayWidth || newHeight != m_chartArrayHeight)
+            {
+                m_chartArrayWidth = newWidth;
+                m_chartArrayHeight = newHeight;
+                m_bitmap = BitmapFactory.New(m_chartArrayWidth, m_chartArrayHeight);
+                imageBitmap.Source = m_bitmap;
+                m_overlay = BitmapFactory.New(m_chartArrayWidth, m_chartArrayHeight);
+                overlayBitmap.Source = m_overlay;
+            }
+
+            Int32Rect imageRect = new Int32Rect(0, 0, m_chartArrayWidth, m_chartArrayHeight);
+
+            try
+            {
+                m_bitmap.Lock();
+                m_bitmap.WritePixels(imageRect, imageData, m_chartArrayWidth * 4, 0);
+                m_bitmap.Unlock();
+                imageBitmap.Source = m_bitmap;
+            }
+            catch (Exception ex)
+            {
+                string errMsg = ex.Message;
+            }
+        }
+
+        public byte[] SynthesizeImage(int width, int height)
+        {
+            byte[] data = new byte[width * height * 4];
+
+            for (int r = 0; r < height; r++)
+            {
+                for (int c = 0; c < width; c++)
+                {
+                    int ndx = (r * width * 4) + (c * 4);
+                    data[ndx + 0] = 0;      // blue
+                    data[ndx + 1] = 0;    // green
+                    data[ndx + 2] = 0;      // red
+                    data[ndx + 3] = 255;    // alpha
+                }
+            }
+
+            return data;
+        }
+
+        public void OptimizeBitmapSize(int windowWidth, int windowHeight,
+            ref int suggestedBitmapWidth, ref int suggestedBitmapHeight,
+            ref int pixelWidthPerChart, ref int pixelHeightPerChart)
+        {
+            pixelWidthPerChart = (windowWidth - (2 * m_margin) - ((m_cols - 1) * m_padding)) / m_cols;
+            pixelHeightPerChart = (windowHeight - (2 * m_margin) - ((m_rows - 1) * m_padding)) / m_rows;
+
+            suggestedBitmapWidth = (pixelWidthPerChart * m_cols) + ((m_cols - 1) * m_padding) + (2 * m_margin);
+            suggestedBitmapHeight = (pixelHeightPerChart * m_rows) + ((m_rows - 1) * m_padding) + (2 * m_margin);
+        }
+
+
+
+
+
+
     }
 
 
@@ -1205,300 +1327,6 @@ namespace WPFTools
         }
     }
 
-
-
-    public class MultiChartArray_ViewModel : INotifyPropertyChanged
-        {
-            private AggregateChart _aggregateChart;
-            public AggregateChart aggregateChart
-            {
-                get { return _aggregateChart; }
-                set { _aggregateChart = value; OnPropertyChanged(new PropertyChangedEventArgs("aggregateChart")); }
-            }
-
-
-            private int _rows;
-            public int rows
-            {
-                get { return _rows; }
-                set { _rows = value; OnPropertyChanged(new PropertyChangedEventArgs("rows")); }
-            }
-
-            private int _cols;
-            public int cols
-            {
-                get { return _cols; }
-                set { _cols = value; OnPropertyChanged(new PropertyChangedEventArgs("_cols")); }
-            }
-
-            private int _numTraces;
-            public int numTraces
-            {
-                get { return _numTraces; }
-                set { _numTraces = value; OnPropertyChanged(new PropertyChangedEventArgs("numTraces")); }
-            }
-
-            private Dictionary<int, MultiChartArray_TraceItem> _traces;
-            public Dictionary<int, MultiChartArray_TraceItem> traces
-            {
-                get { return _traces; }
-                set { _traces = value; OnPropertyChanged(new PropertyChangedEventArgs("_traces")); }
-            }
-
-            private Dictionary<Tuple<int, MultiChartArray.SIGNAL_TYPE>, Color> _traceColors;
-            public Dictionary<Tuple<int, MultiChartArray.SIGNAL_TYPE>, Color> traceColors
-            {
-                get { return _traceColors; }
-                set { _traceColors = value; OnPropertyChanged(new PropertyChangedEventArgs("_traceColors")); }
-            }
-
-            private int _maxPoints;
-            public int maxPoints
-            {
-                get { return _maxPoints; }
-                set { _maxPoints = value; OnPropertyChanged(new PropertyChangedEventArgs("maxPoints")); }
-            }
-
-            private int _chartArrayWidth;
-            public int chartArrayWidth
-            {
-                get { return _chartArrayWidth; }
-                set { _chartArrayWidth = value; OnPropertyChanged(new PropertyChangedEventArgs("chartArrayWidth")); }
-            }
-
-            private int _chartArrayHeight;
-            public int chartArrayHeight
-            {
-                get { return _chartArrayHeight; }
-                set { _chartArrayHeight = value; OnPropertyChanged(new PropertyChangedEventArgs("chartArrayHeight")); }
-            }
-
-            private int _padding;
-            public int padding
-            {
-                get { return _padding; }
-                set { _padding = value; OnPropertyChanged(new PropertyChangedEventArgs("padding")); }
-            }
-
-            private int _margin;
-            public int margin
-            {
-                get { return _margin; }
-                set { _margin = value; OnPropertyChanged(new PropertyChangedEventArgs("margin")); }
-            }
-
-            //private int _aggregateWidth;
-            //public int aggregateWidth
-            //{
-            //    get { return _aggregateWidth; }
-            //    set { _aggregateWidth = value; OnPropertyChanged(new PropertyChangedEventArgs("aggregateWidth")); }
-            //}
-
-            //private int _aggregateHeight;
-            //public int aggregateHeight
-            //{
-            //    get { return _aggregateHeight; }
-            //    set { _aggregateHeight = value; OnPropertyChanged(new PropertyChangedEventArgs("aggregateHeight")); }
-            //}
-
-
-            //private string _yMaxText;
-            //public string yMaxText
-            //{
-            //    get { return _yMaxText; }
-            //    set { _yMaxText = value; OnPropertyChanged(new PropertyChangedEventArgs("yMaxText")); }
-            //}
-
-            //private string _yMinText;
-            //public string yMinText
-            //{
-            //    get { return _yMinText; }
-            //    set { _yMinText = value; OnPropertyChanged(new PropertyChangedEventArgs("yMinText")); }
-            //}
-
-            //private string _xMaxText;
-            //public string xMaxText
-            //{
-            //    get { return _xMaxText; }
-            //    set { _xMaxText = value; OnPropertyChanged(new PropertyChangedEventArgs("xMaxText")); }
-            //}
-
-
-
-            private WriteableBitmap _bitmap;
-            public WriteableBitmap bitmap
-            {
-                get { return _bitmap; }
-                set { _bitmap = value; OnPropertyChanged(new PropertyChangedEventArgs("bitmap")); }
-            }
-
-            private WriteableBitmap _overlay;
-            public WriteableBitmap overlay
-            {
-                get { return _overlay; }
-                set { _overlay = value; OnPropertyChanged(new PropertyChangedEventArgs("overlay")); }
-            }
-
-            //private WriteableBitmap _aggregateBitmap;
-            //public WriteableBitmap aggregateBitmap
-            //{
-            //    get { return _aggregateBitmap; }
-            //    set { _aggregateBitmap = value; OnPropertyChanged(new PropertyChangedEventArgs("aggregateBitmap")); }
-            //}
-
-            public void SetBitmap(byte[] imageData, int newWidth, int newHeight)
-            {
-                if (newWidth != chartArrayWidth || newHeight != chartArrayHeight)
-                {
-                    chartArrayWidth = newWidth;
-                    chartArrayHeight = newHeight;
-                    bitmap = BitmapFactory.New(chartArrayWidth, chartArrayHeight);
-                    overlay = BitmapFactory.New(chartArrayWidth, chartArrayHeight);
-                }
-
-                Int32Rect imageRect = new Int32Rect(0, 0, chartArrayWidth, chartArrayHeight);
-
-                try
-                {
-                    bitmap.Lock();
-                    bitmap.WritePixels(imageRect, imageData, chartArrayWidth * 4, 0);
-                    bitmap.Unlock();
-                }
-                catch (Exception ex)
-                {
-                    string errMsg = ex.Message;
-                }
-            }
-
-
-            //public void SetAggregateBitmap(byte[] imageData, int newWidth, int newHeight)
-            //{
-            //    if (newWidth != aggregateWidth || newHeight != aggregateHeight)
-            //    {
-            //        aggregateWidth = newWidth;
-            //        aggregateHeight = newHeight;
-            //        aggregateBitmap = BitmapFactory.New(aggregateWidth, aggregateHeight);
-            //    }
-
-            //    Int32Rect imageRect = new Int32Rect(0, 0, aggregateWidth, aggregateHeight);
-
-            //    try
-            //    {
-            //        aggregateBitmap.Lock();
-            //        aggregateBitmap.WritePixels(imageRect, imageData, aggregateWidth * 4, 0);
-            //        aggregateBitmap.Unlock();
-            //    }
-            //    catch (Exception ex)
-            //    {
-            //        string errMsg = ex.Message;
-            //    }
-            //}
-
-
-
-            public byte[] SynthesizeImage(int width, int height)
-            {
-                byte[] data = new byte[width * height * 4];
-
-                for (int r = 0; r < height; r++)
-                {
-                    for (int c = 0; c < width; c++)
-                    {
-                        int ndx = (r * width * 4) + (c * 4);
-                        data[ndx + 0] = 0;      // blue
-                        data[ndx + 1] = 0;    // green
-                        data[ndx + 2] = 0;      // red
-                        data[ndx + 3] = 255;    // alpha
-                    }
-                }
-
-                return data;
-            }
-
-            public void OptimizeBitmapSize(int windowWidth, int windowHeight, 
-                ref int suggestedBitmapWidth, ref int suggestedBitmapHeight, 
-                ref int pixelWidthPerChart, ref int pixelHeightPerChart)
-            {
-                pixelWidthPerChart =  (windowWidth - (2 * margin) - ((cols - 1) * padding)) / cols;
-                pixelHeightPerChart = (windowHeight - (2 * margin) - ((rows - 1) * padding)) / rows;
-
-                suggestedBitmapWidth = (pixelWidthPerChart * cols) + ((cols - 1) * padding) + (2 * margin);
-                suggestedBitmapHeight = (pixelHeightPerChart * rows) + ((rows - 1) * padding) + (2 * margin);
-            }
-
-
-            public MultiChartArray_ViewModel(int Rows, int Cols, int Padding, int Margin, int MaxPoints, List<MultiChartArray_TraceItem> Traces, AggregateChart aggChart)
-            {
-                chartArrayWidth = 0;
-                chartArrayHeight = 0;
-
-                cols = Cols;
-                rows = Rows;
-                padding = Padding;
-                margin = Margin;
-                maxPoints = MaxPoints;
-                numTraces = Traces.Count;
-                aggregateChart = aggChart;
-
-                // initialize traces and trace colors
-                int traceNum = 0;
-                traces = new Dictionary<int, MultiChartArray_TraceItem>();
-                traceColors = new Dictionary<Tuple<int, MultiChartArray.SIGNAL_TYPE>, Color>();
-                foreach (MultiChartArray_TraceItem item in Traces)
-                {
-                    item.traceNum = traceNum;
-                    traces.Add(item.id, item);
-                    traceNum++;
-
-                    // initialize trace colors                    
-                    foreach (int value in Enum.GetValues(typeof(MultiChartArray.SIGNAL_TYPE)))
-                    {
-                        MultiChartArray.SIGNAL_TYPE signal = (MultiChartArray.SIGNAL_TYPE)value;
-                        traceColors.Add(Tuple.Create<int, MultiChartArray.SIGNAL_TYPE>(item.id, signal), Colors.Yellow);  // default to yellow
-                    }
-                }
-
-                
-
-                int pixelsPerChart = 42;
-
-                int newWidth = (pixelsPerChart * cols)  + ((cols - 1) * padding) + (2 * margin);
-                int newHeight = (pixelsPerChart * rows) + ((rows - 1) * padding) + (2 * margin);
-                     
-                byte[] img = SynthesizeImage(newWidth, newHeight);
-
-                SetBitmap(img, newWidth, newHeight);  
-            
-                if(aggregateChart!= null)
-                {
-                    aggregateChart.m_vm.SetBitmap(img, newWidth / 2, newHeight / 2);
-
-                    aggregateChart.m_vm.yMaxText = "YMax";
-                    aggregateChart.m_vm.yMinText = "YMin";
-                    aggregateChart.m_vm.xMaxText = "XMax";
-                }
-                         
-               
-            }
-
-
-            public event PropertyChangedEventHandler PropertyChanged;
-            public void OnPropertyChanged(PropertyChangedEventArgs e)
-            {
-                if (PropertyChanged != null)
-                {
-                    PropertyChanged(this, e);
-                }
-            }
-        }
-
-    
-
-
-
-    //////////////////////////////////////////////////////////////////////////////////////////
-
-    //////////////////////////////////////////////////////////////////////////////////////////
 
     public class MultiChartArray_Message_EventArgs : EventArgs
     {

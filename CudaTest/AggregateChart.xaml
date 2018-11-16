@@ -3,7 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
-             xmlns:local="clr-namespace:CudaTest"
+             xmlns:local="clr-namespace:WPFTools"
              mc:Ignorable="d" 
              d:DesignHeight="300" d:DesignWidth="300">
     <!-- Aggregate Chart Grid -->
@@ -23,18 +23,17 @@
         <!-- Aggregate Chart -->
         <Grid Grid.Row="1" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
             
-            <Image x:Name="AggregateImage" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Stretch="Fill"
-                        Source="{Binding bitmap}"/>
+            <Image x:Name="AggregateImage" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Stretch="Fill"/>
             
             <TextBlock x:Name="YMaxText" HorizontalAlignment="Left" VerticalAlignment="Top" 
                                FontSize="10" FontStyle="Italic" FontWeight="Light" Margin="5,0,0,0"
-                               Text="{Binding yMaxText}" Foreground="White" Background="Transparent" Panel.ZIndex="10"/>
+                               Foreground="White" Background="Transparent" Panel.ZIndex="10"/>
             <TextBlock x:Name="YMinText" HorizontalAlignment="Left" VerticalAlignment="Bottom" 
                                FontSize="10" FontStyle="Italic" FontWeight="Light" Margin="5,0,0,0" 
-                               Text="{Binding yMinText}" Foreground="White" Background="Transparent" Panel.ZIndex="10"/>
+                               Foreground="White" Background="Transparent" Panel.ZIndex="10"/>
             <TextBlock x:Name="XMaxText" HorizontalAlignment="Right" VerticalAlignment="Bottom" 
                                FontSize="10" FontStyle="Italic" FontWeight="Light" Margin="0,0,5,0"
-                               Text="{Binding xMaxText}" Foreground="White" Background="Transparent" Panel.ZIndex="10"/>
+                               Foreground="White" Background="Transparent" Panel.ZIndex="10"/>
         </Grid>
 
         <!-- Grid for Trace Visibility Check Boxes -->

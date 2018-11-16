@@ -31,13 +31,11 @@
 
                     <Image Grid.Row="0" Grid.Column="0" Name="imageBitmap" Panel.ZIndex="10"
                        Stretch="Fill" Margin="0"
-                       Source="{Binding Path=bitmap}"
                        IsHitTestVisible="False"               
                        />
 
                     <Image Grid.Row="0" Grid.Column="0" Name="overlayBitmap" Panel.ZIndex="12"
                        Stretch="Fill" Margin="0"
-                       Source="{Binding Path=overlay}"
                        IsHitTestVisible="True" 
                            MouseLeftButtonUp="ChartArray_MouseLeftButtonUp"
                            MouseLeftButtonDown="ChartArray_MouseLeftButtonDown"

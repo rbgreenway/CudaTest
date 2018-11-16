@@ -22,25 +22,44 @@ namespace WPFTools
     /// </summary>
     public partial class AggregateChart : UserControl
     {
-        public AggregateChart_ViewModel m_vm;
+        public int m_width;      
+        public int m_height;
+        public string m_yMaxText;
+        public string m_yMinText;
+        public string m_xMaxText;
+        public WriteableBitmap m_bitmap;
+        
+
 
         public AggregateChart()
         {
             InitializeComponent();
+            
+            m_width = 512;
+            m_height = 512;
+            m_bitmap = BitmapFactory.New(m_width, m_height);
 
-            m_vm = new AggregateChart_ViewModel();
-            DataContext = m_vm;
+            SetRanges(1, 0, 1);
         }
 
+
+        public void SetRanges(int xmax, int ymin, int ymax)
+        {
+            m_xMaxText = xmax.ToString();
+            m_yMinText = ymin.ToString();
+            m_yMaxText = ymax.ToString();
+
+            XMaxText.Text = m_xMaxText;
+            YMinText.Text = m_yMinText;
+            YMaxText.Text = m_yMaxText;
+        }
 
 
         public void UpdateRanges(int xmax, int ymin, int ymax)
         {
             Dispatcher.BeginInvoke(new Action(() =>
-            {             
-                m_vm.xMaxText = xmax.ToString();
-                m_vm.yMinText = ymin.ToString();
-                m_vm.yMaxText = ymax.ToString();
+            {
+                SetRanges(xmax, ymin, ymax);
             }), DispatcherPriority.Background);
         }
 
@@ -66,74 +85,25 @@ namespace WPFTools
             AggregateHeaderText.Text = title;
         }
 
-     
-    }
-
-
-
-    public class AggregateChart_ViewModel : INotifyPropertyChanged
-    {
-
-        private int _width;
-        public int width
-        {
-            get { return _width; }
-            set { _width = value; OnPropertyChanged(new PropertyChangedEventArgs("width")); }
-        }
-
-        private int _height;
-        public int height
-        {
-            get { return _height; }
-            set { _height = value; OnPropertyChanged(new PropertyChangedEventArgs("height")); }
-        }
-
-        private string _yMaxText;
-        public string yMaxText
-        {
-            get { return _yMaxText; }
-            set { _yMaxText = value; OnPropertyChanged(new PropertyChangedEventArgs("yMaxText")); }
-        }
-
-        private string _yMinText;
-        public string yMinText
-        {
-            get { return _yMinText; }
-            set { _yMinText = value; OnPropertyChanged(new PropertyChangedEventArgs("yMinText")); }
-        }
-
-        private string _xMaxText;
-        public string xMaxText
-        {
-            get { return _xMaxText; }
-            set { _xMaxText = value; OnPropertyChanged(new PropertyChangedEventArgs("xMaxText")); }
-        }
-
-
-        private WriteableBitmap _bitmap;
-        public WriteableBitmap bitmap
-        {
-            get { return _bitmap; }
-            set { _bitmap = value; OnPropertyChanged(new PropertyChangedEventArgs("bitmap")); }
-        }
-
 
         public void SetBitmap(byte[] imageData, int newWidth, int newHeight)
         {
-            if (newWidth != width || newHeight != height)
+            if (newWidth != m_width || newHeight != m_height)
             {
-                width = newWidth;
-                height = newHeight;
-                bitmap = BitmapFactory.New(width, height);
+                m_width = newWidth;
+                m_height = newHeight;
+                m_bitmap = BitmapFactory.New(m_width, m_height);
+                AggregateImage.Source = m_bitmap;
             }
 
-            Int32Rect imageRect = new Int32Rect(0, 0, width, height);
+            Int32Rect imageRect = new Int32Rect(0, 0, m_width, m_height);
 
             try
             {
-                bitmap.Lock();
-                bitmap.WritePixels(imageRect, imageData, width * 4, 0);
-                bitmap.Unlock();
+                m_bitmap.Lock();
+                m_bitmap.WritePixels(imageRect, imageData, m_width * 4, 0);
+                m_bitmap.Unlock();
+                AggregateImage.Source = m_bitmap;
             }
             catch (Exception ex)
             {
@@ -141,30 +111,18 @@ namespace WPFTools
             }
         }
 
-
-
-        public AggregateChart_ViewModel()
+        public void SetBitmap(WriteableBitmap bitmap)
         {
-            width = 512;
-            height = 512;
-            bitmap = BitmapFactory.New(width, height);
-
-            xMaxText = "XMax";
-            yMinText = "YMin";
-            yMaxText = "YMax";
+            m_bitmap = bitmap;
+            m_width = bitmap.PixelWidth;
+            m_height = bitmap.PixelHeight;
+            AggregateImage.Source = m_bitmap;
         }
 
 
-
-        public event PropertyChangedEventHandler PropertyChanged;
-        public void OnPropertyChanged(PropertyChangedEventArgs e)
-        {
-            if (PropertyChanged != null)
-            {
-                PropertyChanged(this, e);
-            }
-        }
     }
+
+    
 
 
 }
